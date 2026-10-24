@@ -1,0 +1,104 @@
+name: Terraform CI-CD
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: terraform-cluster
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Создать каталог кэша провайдеров
+        run: |
+          mkdir -p "$RUNNER_TEMP/terraform-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/terraform-plugin-cache" >> "$GITHUB_ENV"
+      - name: Восстановить общий кэш Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/terraform-plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('terraform/**/.terraform.lock.hcl') }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.4
+          terraform_wrapper: false
+      - name: Проверить Terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform -chdir=terraform/bootstrap init -backend=false -input=false
+          terraform -chdir=terraform/bootstrap validate
+          terraform -chdir=terraform/cluster init -backend=false -input=false
+          terraform -chdir=terraform/cluster validate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Проверить YAML, HCL, shell и Ansible
+        run: bash scripts/validate-local.sh
+  apply:
+    # На этапе подготовки переменная отсутствует или равна false: ВМ не создаются.
+    # После включения сохраняется автоматический apply при каждом коммите main.
+    if: vars.TF_APPLY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - uses: actions/checkout@v4
+      - name: Создать каталог кэша провайдеров
+        run: |
+          mkdir -p "$RUNNER_TEMP/terraform-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/terraform-plugin-cache" >> "$GITHUB_ENV"
+      - name: Восстановить общий кэш Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/terraform-plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('terraform/**/.terraform.lock.hcl') }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.4
+          terraform_wrapper: false
+      - name: Подготовить параметры и ключ сервисного аккаунта
+        env:
+          SA_KEY_JSON: ${{ secrets.YC_SA_KEY_JSON }}
+          TFVARS_JSON: ${{ secrets.TFVARS_JSON }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          umask 077
+          python3 - <<'PY_SETUP'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ['RUNNER_TEMP']) / 'yc-key.json'
+          p.write_text(json.dumps(json.loads(os.environ['SA_KEY_JSON'])))
+          Path('terraform/cluster/ci.auto.tfvars.json').write_text(json.dumps(json.loads(os.environ['TFVARS_JSON'])))
+          backend = Path('terraform/cluster/backend.hcl.example').read_text()
+          bucket = os.environ['TF_STATE_BUCKET']
+          assert bucket and all(c.islower() or c.isdigit() or c in '.-' for c in bucket)
+          Path('terraform/cluster/backend.hcl').write_text(backend.replace('devops-diplom-state-b1gcaq8clab0al7c1qhs', bucket))
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'YC_SERVICE_ACCOUNT_KEY_FILE={p}\n')
+          PY_SETUP
+      - name: Terraform init, plan, apply при каждом коммите в main
+        run: |
+          terraform -chdir=terraform/cluster init -input=false -backend-config=backend.hcl
+          terraform -chdir=terraform/cluster plan -input=false -out=cluster.tfplan
+          terraform -chdir=terraform/cluster apply -input=false -auto-approve cluster.tfplan
+          terraform -chdir=terraform/cluster output -json > terraform-outputs.json
+          terraform -chdir=terraform/cluster output >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs
+          path: terraform-outputs.json
+          retention-days: 7
+      - name: Удалить временные секреты и план
+        if: always()
+        run: rm -f "$RUNNER_TEMP/yc-key.json" terraform/cluster/ci.auto.tfvars.json terraform/cluster/cluster.tfplan

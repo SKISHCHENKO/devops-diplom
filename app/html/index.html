@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevOps Diploma</title>
+  <style>
+    body { margin:0; min-height:100vh; display:grid; place-items:center;
+      color:#edf7ff; background:#102434; font:18px/1.6 system-ui,sans-serif; }
+    main { max-width:720px; padding:48px; }
+    small { color:#83d2cc; letter-spacing:.12em; }
+    h1 { font-size:clamp(32px,6vw,56px); line-height:1.15; }
+    a { color:#8fe1d9; }
+    code { color:#b5dedb; }
+  </style>
+</head>
+<body><main>
+  <small>YANDEX CLOUD · KUBERNETES · CI/CD</small>
+  <h1>DevOps Diploma</h1>
+  <p>Тестовое приложение дипломного проекта. Nginx отдаёт статическую страницу из Docker-образа, запущенного в Kubernetes.</p>
+  <p>Версия образа: <code id="version">загрузка…</code></p>
+  <p><a href="/grafana/">Мониторинг Kubernetes в Grafana</a></p>
+</main>
+<script>
+fetch('/version.txt', {cache:'no-store'})
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  .then(v => { document.getElementById('version').textContent = v.trim(); })
+  .catch(() => { document.getElementById('version').textContent = 'недоступна'; });
+</script>
+</body>
+</html>

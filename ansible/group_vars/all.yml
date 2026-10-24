@@ -1,0 +1,2 @@
+k3s_version: v1.36.5+k3s1
+kubeconfig_local_path: "{{ playbook_dir }}/../.generated/admin.kubeconfig"

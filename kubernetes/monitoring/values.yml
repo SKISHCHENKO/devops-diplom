@@ -1,0 +1,95 @@
+# Chart: prometheus-community/kube-prometheus-stack 92.10.1
+# Persistent workloads закреплены за постоянным control-plane.
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeControllerManager: false
+    kubeProxy: false
+# Эти компоненты K3s встроены в один процесс и не публикуют отдельные endpoints.
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+prometheusOperator:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 300m, memory: 256Mi}
+grafana:
+  fullnameOverride: monitoring-grafana
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  nodeSelector:
+    kubernetes.io/hostname: control-plane
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 300m, memory: 384Mi}
+  grafana.ini:
+    server:
+      root_url: '%(protocol)s://%(domain)s/grafana/'
+      serve_from_sub_path: true
+    users:
+      allow_sign_up: false
+    auth.anonymous:
+      enabled: false
+  ingress:
+    enabled: false
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: monitoring
+      label: grafana_dashboard
+      labelValue: '1'
+prometheus:
+  prometheusSpec:
+    nodeSelector:
+      kubernetes.io/hostname: control-plane
+    retention: 24h
+    retentionSize: 2GB
+    resources:
+      requests: {cpu: 150m, memory: 512Mi}
+      limits: {cpu: 700m, memory: 1400Mi}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 4Gi
+alertmanager:
+  alertmanagerSpec:
+    nodeSelector:
+      kubernetes.io/hostname: control-plane
+    resources:
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {cpu: 200m, memory: 192Mi}
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+kube-state-metrics:
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 192Mi}
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 96Mi}

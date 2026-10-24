@@ -1,0 +1,9 @@
+node-name: {{ inventory_hostname }}
+node-ip: {{ private_ip }}
+advertise-address: {{ private_ip }}
+tls-san:
+  - {{ ansible_host }}
+  - {{ private_ip }}
+write-kubeconfig-mode: "0600"
+secrets-encryption: true
+# Стандартные Traefik, ServiceLB, local-path и metrics-server включены.

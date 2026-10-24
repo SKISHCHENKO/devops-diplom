@@ -1,0 +1,188 @@
+---
+- name: Подготовить все узлы
+  hosts: k3s
+  any_errors_fatal: true
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Дождаться SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+    - name: Дождаться cloud-init
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+    - name: Проверить установленную версию
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: installed_k3s
+      failed_when: false
+      changed_when: false
+    - name: Проверить ветку существующего K3s до изменения конфигурации
+      ansible.builtin.assert:
+        that:
+          - "('k3s version ' ~ (k3s_version.split('.')[:2] | join('.')) ~ '.') in installed_k3s.stdout"
+        fail_msg: >-
+          Найден K3s другой ветки: {{ installed_k3s.stdout | trim }}.
+          Этот плейбук выполняет новую установку или повторный запуск ветки
+          {{ k3s_version.split('.')[:2] | join('.') }}.
+          Для существующего кластера нужен отдельный поэтапный план обновления;
+          перескакивать с 1.34 сразу на 1.36 нельзя.
+      when: installed_k3s.rc == 0
+    - name: Установить зависимости
+      ansible.builtin.apt:
+        name: [curl, ca-certificates, python3, iptables]
+        update_cache: true
+        cache_valid_time: 3600
+        state: present
+    - name: Отключить swap в текущей сессии
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+    - name: Отключить swap после перезагрузки
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(?!#)(.*\s+swap\s+.*)$'
+        replace: '# \1'
+    - name: Загрузить модули ядра
+      ansible.builtin.command: "modprobe {{ item }}"
+      loop: [overlay, br_netfilter]
+      changed_when: false
+    - name: Сохранить модули
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k3s.conf
+        content: "overlay\nbr_netfilter\n"
+        mode: '0644'
+    - name: Настроить сетевые sysctl
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/90-k3s.conf
+        content: |
+          net.ipv4.ip_forward=1
+          net.bridge.bridge-nf-call-iptables=1
+          net.bridge.bridge-nf-call-ip6tables=1
+        mode: '0644'
+      register: sysctl_config
+    - name: Применить sysctl
+      ansible.builtin.command: sysctl --system
+      when: sysctl_config.changed
+      changed_when: true
+    - name: Создать каталог конфигурации
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: '0700'
+    - name: Загрузить официальный установщик K3s
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /usr/local/src/install-k3s.sh
+        mode: '0700'
+
+- name: Установить управляющий узел
+  hosts: server
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Записать конфигурацию сервера
+      ansible.builtin.template:
+        src: server.yaml.j2
+        dest: /etc/rancher/k3s/config.yaml
+        mode: '0600'
+      register: server_config
+    - name: Установить или обновить K3s server
+      ansible.builtin.command: sh /usr/local/src/install-k3s.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: server
+      when: installed_k3s.rc != 0 or k3s_version not in installed_k3s.stdout
+      register: server_install
+      changed_when: true
+    - name: Перезапустить после изменения конфигурации
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+      when: server_config.changed and not server_install.changed
+    - name: Обеспечить автозапуск сервера
+      ansible.builtin.systemd:
+        name: k3s
+        enabled: true
+        state: started
+    - name: Дождаться API
+      ansible.builtin.command: /usr/local/bin/k3s kubectl get --raw=/readyz
+      register: ready
+      until: ready.rc == 0
+      retries: 60
+      delay: 5
+      changed_when: false
+    - name: Прочитать токен присоединения
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: node_token
+      no_log: true
+    - name: Сохранить токен в памяти Ansible
+      ansible.builtin.set_fact:
+        k3s_node_token: "{{ node_token.content | b64decode | trim }}"
+      no_log: true
+    - name: Получить административный kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: admin_config
+      no_log: true
+    - name: Создать локальный каталог
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../.generated"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+      become: false
+    - name: Записать kubeconfig с публичным адресом и доверенным CA
+      ansible.builtin.copy:
+        dest: "{{ kubeconfig_local_path }}"
+        content: "{{ (admin_config.content | b64decode) | replace('https://127.0.0.1:6443', 'https://' ~ ansible_host ~ ':6443') }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+- name: Установить рабочие узлы
+  hosts: agents
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Записать конфигурацию агента
+      ansible.builtin.template:
+        src: agent.yaml.j2
+        dest: /etc/rancher/k3s/config.yaml
+        mode: '0600'
+      register: agent_config
+      no_log: true
+    - name: Установить или обновить K3s agent
+      ansible.builtin.command: sh /usr/local/src/install-k3s.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: agent
+      when: installed_k3s.rc != 0 or k3s_version not in installed_k3s.stdout
+      register: agent_install
+      changed_when: true
+    - name: Перезапустить после изменения конфигурации
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: restarted
+      when: agent_config.changed and not agent_install.changed
+    - name: Обеспечить автозапуск агента
+      ansible.builtin.systemd:
+        name: k3s-agent
+        enabled: true
+        state: started
+
+- name: Проверить готовность кластера
+  hosts: server
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Дождаться регистрации трех узлов
+      ansible.builtin.command: /usr/local/bin/k3s kubectl get nodes -o name
+      register: nodes
+      until: nodes.rc == 0 and nodes.stdout_lines | length == groups['k3s'] | length
+      retries: 60
+      delay: 5
+      changed_when: false
+    - name: Дождаться Ready всех узлов
+      ansible.builtin.command: /usr/local/bin/k3s kubectl wait --for=condition=Ready nodes --all --timeout=300s
+      changed_when: false

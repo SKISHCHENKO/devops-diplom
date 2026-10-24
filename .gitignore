@@ -1,0 +1,13 @@
+.env
+.secrets/
+.generated/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.auto.tfvars.json
+backend.hcl
+*.retry
+__pycache__/
+.venv/
+*.log

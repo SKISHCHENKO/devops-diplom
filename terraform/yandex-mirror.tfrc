@@ -1,0 +1,12 @@
+# Необязательное зеркало только для провайдера Yandex Cloud.
+# Подключение: export TF_CLI_CONFIG_FILE="$PWD/terraform/yandex-mirror.tfrc"
+# ~/.terraformrc не изменяется; при включении читается этот CLI config.
+provider_installation {
+  network_mirror {
+    url     = "https://terraform-mirror.yandexcloud.net/"
+    include = ["registry.terraform.io/yandex-cloud/yandex"]
+  }
+  direct {
+    exclude = ["registry.terraform.io/yandex-cloud/yandex"]
+  }
+}

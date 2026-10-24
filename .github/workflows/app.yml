@@ -1,0 +1,104 @@
+name: Application CI-CD
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Проверить IMAGE_NAME
+        id: image
+        env:
+          IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+        run: |
+          [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9_-]*/[a-z0-9][a-z0-9._-]*$ ]]
+          echo "name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=ref,event=tag
+      - name: Собрать образ для тестирования
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Проверить nginx и HTTP
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: bash app/scripts/test.sh "$IMAGE:sha-$GITHUB_SHA"
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Опубликовать проверенный образ
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Ссылка на образ
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: echo "Образ для деплоя — $IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+  deploy:
+    # Сборка и публикация работают до создания ВМ; CD включается после настройки кластера.
+    if: vars.K8S_DEPLOY_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: app-production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Установить kubectl
+        run: |
+          curl -fsSLo kubectl https://dl.k8s.io/release/v1.36.5/bin/linux/amd64/kubectl
+          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.36.5/bin/linux/amd64/kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -
+          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+      - name: Загрузить ограниченный kubeconfig
+        env:
+          CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          test -n "$CONFIG_B64"
+          umask 077
+          echo "$CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Развернуть образ тега по неизменяемому digest
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          kubectl -n app set image deployment/diplom-web "nginx=$IMAGE@$DIGEST"
+          kubectl -n app rollout status deployment/diplom-web --timeout=300s
+          kubectl -n app get deployment diplom-web -o wide
+      - name: Удалить временный kubeconfig
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kubeconfig"

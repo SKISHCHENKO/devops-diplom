@@ -1,0 +1,4 @@
+ansible-core==2.17.14
+PyYAML==6.0.3
+python-hcl2==8.1.4
+kubernetes-validate==1.37.0
