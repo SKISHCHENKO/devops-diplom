@@ -11,11 +11,12 @@
 создавать не нужно.
 
 Исходники подготовлены по заданию [«Дипломный практикум в Yandex Cloud»](https://github.com/netology-code/devops-diplom-yandexcloud).
-Сохранённый текст задания — [docs/ASSIGNMENT.txt](docs/ASSIGNMENT.txt),
-соответствие пунктам — [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+Описание компонентов, порядок запуска, проверки и материалы для сдачи
+собраны в этом README. Отдельные файлы с инструкциями для запуска не требуются.
 Старые приложенные файлы с бастионом в комплект не включены и не использованы.
 
-**Подготовка без создания ВМ:** начните с [docs/CI_WITHOUT_VMS.md](docs/CI_WITHOUT_VMS.md).
+**Подготовка без создания ВМ:** начните с раздела
+[«Один GitHub-репозиторий и его секреты»](#один-github-репозиторий-и-его-секреты).
 В GitHub Actions задайте `TF_APPLY_ENABLED=false` и `K8S_DEPLOY_ENABLED=false`.
 При отсутствующих переменных инфраструктура и CD также выключены. Terraform
 выполняет проверки без обращения к state, приложение собирается, тестируется
@@ -95,9 +96,6 @@ Git-репозиторий с исходниками.
 | [.env.example](.env.example) | образец локальных параметров |
 | [.gitignore](.gitignore) | исключения для state, ключей, локальных настроек и временных файлов |
 | [requirements.txt](requirements.txt) | зависимости Ansible и локальных проверок |
-| [VALIDATION.md](VALIDATION.md) | результаты и границы выполненной проверки |
-| [docs/SUBMISSION.md](docs/SUBMISSION.md) | шаблон итогового отчёта со ссылками |
-| [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | порядок демонстрации и снимков экрана |
 
 Каталоги `.secrets/`, `.generated/`, `.venv/`, файлы state и `.env` создаются
 локально при запуске и исключены из Git. В архиве реальных ключей и токенов нет.
@@ -105,8 +103,7 @@ Git-репозиторий с исходниками.
 ## Инструменты
 
 Рабочий компьютер — Linux/bash; под Windows можно использовать WSL Ubuntu.
-Ваши локальные ВМ `192.168.56.104` и `192.168.56.105` не являются узлами этого
-кластера: три новые ВМ создаются Terraform в Yandex Cloud.
+Три ВМ Kubernetes создаются Terraform в Yandex Cloud на этапе развёртывания.
 
 Нужны Python 3.10+, Git, curl, unzip, OpenSSL, Yandex CLI, Terraform 1.11.4,
 kubectl 1.36 и Helm 3. Для локального теста приложения нужен Docker; GitHub
@@ -217,7 +214,10 @@ ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C 'devops-diplom'
 При замене Kubernetes 1.34 на 1.36 в исходниках повторять уже успешно
 завершённый `bootstrap.sh` не требуется: аккаунты, бакет и Terraform-ресурсы
 не менялись. Если bootstrap ещё не выполнялся, он нужен один раз по инструкции ниже.
-Подробности применения обновления — [docs/KUBERNETES_1_36.md](docs/KUBERNETES_1_36.md).
+Для новой установки версия задаётся в `ansible/group_vars/all.yml`; в комплекте
+это `v1.36.5+k3s1`. Kubectl в CI — `1.36.5`, схема проверки манифестов — `1.36.0`.
+Существующий кластер другой minor-ветки требует отдельного поэтапного обновления;
+плейбук останавливает такую попытку до изменения конфигурации.
 
 Это первый этап развёртывания. Он выполняется локально от пользовательского
 профиля Yandex CLI до настройки автоматического Terraform pipeline.
@@ -255,30 +255,42 @@ Bootstrap state находится в `terraform/bootstrap/terraform.tfstate` и
 
 ## Один GitHub-репозиторий и его секреты
 
-Создайте **один** GitHub-репозиторий, например `SKISHCHENKO/devops-diplom`.
+Общий GitHub-репозиторий: <https://github.com/SKISHCHENKO/devops-diplom>.
 Его корень должен содержать этот README, `.github/`, `terraform/`, `ansible/`,
 `kubernetes/`, `scripts/` и `app/`.
 
 В Docker Hub создайте публичное хранилище образов `devops-diplom-app`.
-Значение `<dockerhub_login>/devops-diplom-app` должно совпадать с `IMAGE_NAME`
+Для аккаунта `skishchenko` полное имя образа — `skishchenko/devops-diplom-app`.
+Это значение должно совпадать с `IMAGE_NAME`
 в локальном `.env` и в GitHub Actions. Публичный доступ позволяет Kubernetes
 скачивать образ без дополнительного imagePullSecret.
+
+Если хранилище ещё не создано, откройте Docker Hub → My Hub → Repositories
+→ Create repository, выберите свой namespace, имя `devops-diplom-app` и Public.
+В Docker Home откройте Account settings → Personal access tokens → Generate
+new token. Выберите Repo Read & Write и сохраните токен для GitHub Actions.
+Сборку выполняет GitHub runner, поэтому для этого этапа Docker на локальном
+компьютере не требуется.
 
 В **этом же GitHub-репозитории** откройте Settings → Secrets and variables → Actions.
 
 | Тип | Имя | Источник значения | Когда добавить |
 |---|---|---|---|
-| Variable | `IMAGE_NAME` | `<dockerhub_login>/devops-diplom-app` | до первого push |
+| Variable | `IMAGE_NAME` | `skishchenko/devops-diplom-app` | до первого push |
 | Variable | `TF_APPLY_ENABLED` | `false` при подготовке; `true` перед созданием ВМ | до первого push |
 | Variable | `K8S_DEPLOY_ENABLED` | `false` до готовности кластера; затем `true` | до первого push |
-| Variable | `TF_STATE_BUCKET` | вывод `terraform -chdir=terraform/bootstrap output -raw bucket_name` | после bootstrap, до первого push |
-| Secret | `DOCKERHUB_USERNAME` | ваш логин Docker Hub | до первого push |
+| Variable | `TF_STATE_BUCKET` | вывод `terraform -chdir=terraform/bootstrap output -raw bucket_name` | до включения `TF_APPLY_ENABLED` |
+| Secret | `DOCKERHUB_USERNAME` | `skishchenko` — логин Docker Hub | до первого push |
 | Secret | `DOCKERHUB_TOKEN` | токен Docker Hub с правом записи образа | до первого push |
-| Secret | `YC_SA_KEY_JSON` | весь JSON `.secrets/terraform-sa.json` | после bootstrap, до первого push |
-| Secret | `AWS_ACCESS_KEY_ID` | поле `access_key` из `.secrets/s3.json` | после bootstrap, до первого push |
-| Secret | `AWS_SECRET_ACCESS_KEY` | поле `secret_key` из `.secrets/s3.json` | после bootstrap, до первого push |
-| Secret | `TFVARS_JSON` | весь JSON `terraform/cluster/config.auto.tfvars.json` | после bootstrap, до первого push |
-| Secret | `KUBE_CONFIG_B64` | содержимое `.secrets/ci-kubeconfig.b64` | после установки приложения, до первого тега |
+| Secret | `YC_SA_KEY_JSON` | весь JSON `.secrets/terraform-sa.json` | до включения `TF_APPLY_ENABLED` |
+| Secret | `AWS_ACCESS_KEY_ID` | поле `access_key` из `.secrets/s3.json` | до включения `TF_APPLY_ENABLED` |
+| Secret | `AWS_SECRET_ACCESS_KEY` | поле `secret_key` из `.secrets/s3.json` | до включения `TF_APPLY_ENABLED` |
+| Secret | `TFVARS_JSON` | весь JSON `terraform/cluster/config.auto.tfvars.json` | до включения `TF_APPLY_ENABLED` |
+| Secret | `KUBE_CONFIG_B64` | содержимое `.secrets/ci-kubeconfig.b64` | после установки приложения, до включения CD |
+
+Переменные добавляются во вкладке Variables, секреты — во вкладке Secrets.
+Имя секрета логина должно быть именно `DOCKERHUB_USERNAME`: workflow читает
+`secrets.DOCKERHUB_USERNAME`. Секрет с именем `DOCKERHUB_NAME` его не заменяет.
 
 `TFVARS_JSON` содержит публичный SSH-ключ и параметры ВМ. Закрытый SSH-ключ
 и административный kubeconfig в GitHub не загружаются. Bootstrap не запускается
@@ -291,7 +303,8 @@ Bootstrap state находится в `terraform/bootstrap/terraform.tfstate` и
 
 ## Первый push и сборка приложения
 
-После настройки GitHub/Docker Hub по [инструкции без ВМ](docs/CI_WITHOUT_VMS.md):
+После настройки GitHub/Docker Hub по предыдущему разделу выполните первый push.
+Для нового локального Git-репозитория:
 
 ```bash
 git init -b main
@@ -303,8 +316,9 @@ git remote add origin https://github.com/SKISHCHENKO/devops-diplom.git
 git push -u origin main
 ```
 
-URL — пример адреса репозитория, который вы создадите; архив не подтверждает
-его существование. Если Git уже настроен, достаточно обычного commit/push.
+Если Git уже инициализирован, повторный `git init` не нужен. Если `origin` уже
+существует, сначала проверьте `git remote -v`, не добавляйте его повторно.
+Для последующих изменений достаточно обычного add/commit/push.
 
 Первый push запускает два workflow одного репозитория:
 
@@ -482,11 +496,23 @@ terraform -chdir=terraform/bootstrap validate
 Путь можно изменить через `TF_PLUGIN_CACHE_DIR` в `.env` или окружении.
 GitHub Actions тоже сохраняет и восстанавливает кэш по lock-файлам и платформе.
 Доступ к registry для метаданных может требоваться и при наличии кэша.
-Подробнее: [docs/TERRAFORM_PROVIDER_CACHE.md](docs/TERRAFORM_PROVIDER_CACHE.md).
+
+Если установка провайдера долго остаётся на `Installing`, можно включить
+зеркало Yandex. Файл настройки находится в репозитории; добавьте в `.env`:
+
+```dotenv
+TF_CLI_CONFIG_FILE=$PWD/terraform/yandex-mirror.tfrc
+TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache
+```
+
+Скрипты выполняются из корня проекта, поэтому `$PWD` в этой настройке
+указывает на репозиторий. Пользовательский `~/.terraformrc` не изменяется.
 
 Новые `.terraform.lock.hcl` сохранены в обоих Terraform-каталогах и фиксируют
 версию Yandex provider 0.196.0. Их нужно хранить в Git.
-Результаты проверок комплекта и ограничения среды описаны в [VALIDATION.md](VALIDATION.md).
+Локальные проверки исходников не подтверждают работу облачного backend,
+публикацию Docker image или готовность живого кластера. Эти результаты
+проверяются фактическими запусками pipeline и `scripts/verify.sh`.
 
 ## Повторное создание и удаление
 
@@ -533,20 +559,63 @@ unset YC_TOKEN
 
 ## Что предоставить для сдачи
 
-Заполните [docs/SUBMISSION.md](docs/SUBMISSION.md) реальными результатами:
+Заполните фактическими результатами таблицу в этом разделе. По заданию
+необходимо предоставить исходники Terraform и готовность показать создание
+ресурсов с нуля, Ansible-конфигурацию для выбранного способа установки,
+Dockerfile и опубликованный образ, конфигурацию Kubernetes, ссылки на
+работающие приложение и Grafana с данными доступа. Для выбранного Terraform
+CI/CD нужны снимки реально выполненного pipeline.
 
-- одна ссылка на общий GitHub-репозиторий;
-- ссылки на его каталоги `terraform/`, `ansible/`, `kubernetes/` и `app/Dockerfile`;
-- ссылка на Docker Hub и релизный образ;
-- успешные запуски Terraform CI-CD и Application CI-CD из одной вкладки Actions;
-- URL приложения и Grafana, данные входа Grafana для проверяющего;
-- вывод `kubectl get nodes` и `kubectl get pods --all-namespaces`;
-- снимки экрана по [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
+| Материал | Ссылка / результат |
+|---|---|
+| Общий GitHub-репозиторий | <https://github.com/SKISHCHENKO/devops-diplom> |
+| Terraform | [terraform/](terraform/), отдельно [bootstrap/](terraform/bootstrap/) и [cluster/](terraform/cluster/) |
+| Ansible и K3s | [ansible/](ansible/) |
+| Kubernetes и мониторинг | [kubernetes/](kubernetes/) |
+| Dockerfile приложения | [app/Dockerfile](app/Dockerfile) |
+| Docker Hub repository | <https://hub.docker.com/r/skishchenko/devops-diplom-app> |
+| Опубликованный релизный image и тег | заполнить после публикации |
+| Terraform pipeline от коммита main с init/plan/apply | заполнить ссылку на успешный запуск |
+| CI приложения: build/test/push | заполнить ссылку на успешный запуск |
+| CD нового релизного тега | заполнить ссылку на успешный rollout |
+| Приложение HTTP/80 | заполнить после развёртывания |
+| Grafana HTTP/80 | заполнить после развёртывания |
+| Логин Grafana | `admin` |
+| Пароль Grafana | передать проверяющему отдельно из `.secrets/grafana-password` |
+| Проверка Kubernetes | приложить фактический вывод `kubectl get nodes -o wide` и `kubectl get pods --all-namespaces` |
+| Воспроизводимость инфраструктуры | быть готовым показать destroy/apply основного стека по разделу выше |
 
-В тексте задания явно требуются скриншоты выбранного Terraform pipeline.
-Количество снимков и отдельные скриншоты Kubernetes/Grafana не заданы;
-в ACCEPTANCE.md обязательные материалы отделены от рекомендуемых подтверждений.
+**Скриншоты, прямо запрошенные заданием.** Для выбранной альтернативы
+Atlantis/Terraform Cloud нужны снимки Terraform CI/CD pipeline. Число кадров
+и имена файлов не установлены. Рекомендуется сохранить общий вид успешного
+запуска от `push` в `main` и раскрытый шаг с успешными `init`, `plan`, `apply`
+и итогом применения. Если вывод не помещается, добавьте кадры с продолжением
+и ссылку на логи. `validate` с пропущенным `apply` подтверждает только подготовку.
 
-Этот комплект содержит исходники и порядок запуска. Он не подтверждает
-создание облачных ресурсов, публикацию GitHub/Docker Hub или успешную работу
-живого кластера. Фактические ссылки и снимки нужно получить после развёртывания.
+**Дополнительные рекомендуемые снимки.** Они помогают подтвердить ожидаемый
+результат, но в задании не выделены в отдельный обязательный список:
+
+| Что снять | Что должно быть видно |
+|---|---|
+| CI приложения | успешные сборка, nginx/HTTP-тест и публикация |
+| Docker Hub | имя repository, опубликованные main/release теги и digest |
+| Kubernetes | три Ready-узла версии 1.36 и pods без аварийных состояний |
+| Grafana | адрес интерфейса и заполненный Kubernetes dashboard с CPU/RAM/узлами |
+| Приложение | HTTP-адрес, страница и версия из `/version.txt` |
+| CD релизного тега | успешный deploy job, digest и обновлённая версия |
+
+Снимки CI приложения и Docker Hub можно получить до создания ВМ. Остальные
+подтверждения снимаются после фактического развёртывания. При необходимости
+добавьте Ansible play recap, параметры трёх ВМ, роли Terraform SA и бакет со
+state. Пароли, токены и приватные ключи на снимках и в публичном README не показываются.
+
+Перед итоговой демонстрацией включите `TF_APPLY_ENABLED=true` и
+`K8S_DEPLOY_ENABLED=true`. Проверьте, что коммит main действительно выполняет
+Terraform apply, коммит приложения публикует image, а новый тег выполняет CD.
+Изменение только repository variable не запускает workflow: нужен новый
+commit/push или ручной запуск, а для подтверждения задания покажите запуск от коммита.
+Дашборды должны содержать метрики, а обязательные ссылки на приложение
+и Grafana — открываться у проверяющего. Скриншоты дополняют эти ссылки.
+
+Этот README описывает исходники и порядок запуска. Фактическую публикацию,
+работу backend и живого кластера подтверждают реальные запуски, логи и ссылки.
