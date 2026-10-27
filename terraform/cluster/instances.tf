@@ -4,8 +4,8 @@ data "yandex_compute_image" "ubuntu" {
 locals {
   nodes = {
     control-plane = { subnet = "a", ip = "10.10.10.10", worker = false }
-    worker-1      = { subnet = "b", ip = "10.10.20.10", worker = true }
-    worker-2      = { subnet = "d", ip = "10.10.30.10", worker = true }
+    worker-1      = { subnet = "d1", ip = "10.10.20.10", worker = true }
+    worker-2      = { subnet = "d2", ip = "10.10.30.10", worker = true }
   }
 }
 # Стабильные публичные адреса сохраняются при остановке прерываемых workers.

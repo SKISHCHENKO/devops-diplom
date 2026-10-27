@@ -1,6 +1,7 @@
 # Дипломный практикум в Yandex Cloud
 
 ## Цели:
+
 - Подготовить облачную инфраструктуру на базе облачного провайдера Яндекс.Облако.
 - Запустить и сконфигурировать Kubernetes кластер.
 - Установить и настроить систему мониторинга.
@@ -9,33 +10,44 @@
 - Настроить CD для автоматического развёртывания приложения.
 
 ## Этапы выполнения:
+
 ### Создание облачной инфраструктуры
+
 Ожидаемые результаты:
 - Terraform сконфигурирован и создание инфраструктуры посредством Terraform возможно без дополнительных ручных действий, стейт основной конфигурации сохраняется в бакете или Terraform Cloud
 - Полученная конфигурация инфраструктуры является предварительной, поэтому в ходе дальнейшего выполнения задания возможны изменения.
+
 ### Создание Kubernetes кластера
+
 Ожидаемый результат:
 - Работоспособный Kubernetes кластер.
 - В файле ~/.kube/config находятся данные для доступа к кластеру.
 - Команда kubectl get pods --all-namespaces отрабатывает без ошибок.
+
 ### Создание тестового приложения
+
 Ожидаемый результат:
 - Git репозиторий с тестовым приложением и Dockerfile.
 - Регистр с собранным docker image. В качестве регистри может быть DockerHub или Yandex Container Registry, созданный также с помощью terraform.
+
 ### Подготовка cистемы мониторинга и деплой приложения
+
 Ожидаемый результат:
 - Git репозиторий с конфигурационными файлами для настройки Kubernetes.
 - Http доступ на 80 порту к web интерфейсу grafana.
 - Дашборды в grafana отображающие состояние Kubernetes кластера.
 - Http доступ на 80 порту к тестовому приложению.
 - Atlantis или terraform cloud или ci/cd-terraform
+
 ### Установка и настройка CI/CD
+
 Ожидаемый результат:
 - Интерфейс ci/cd сервиса доступен по http.
 - При любом коммите в репозиторие с тестовым приложением происходит сборка и отправка в регистр Docker образа.
 - При создании тега (например, v1.0.0) происходит сборка и отправка с соответствующим label в регистри, а также деплой соответствующего Docker образа в кластер Kubernetes.
 
 ### Что необходимо для сдачи задания?
+
 - Репозиторий с конфигурационными файлами Terraform и готовность продемонстрировать создание всех ресурсов с нуля.
 - Пример pull request с комментариями созданными atlantis'ом или снимки экрана из Terraform Cloud или вашего CI-CD-terraform pipeline.
 - Репозиторий с конфигурацией ansible, если был выбран способ создания Kubernetes кластера при помощи ansible.
@@ -57,6 +69,7 @@
 3. [Инструменты](#инструменты)
 4. [Профиль Yandex CLI и локальные параметры](#профиль-yandex-cli-и-локальные-параметры)
 5. [Создание сервисных аккаунтов и S3 backend](#создание-сервисных-аккаунтов-и-s3-backend)
+   - [Проверка плана без создания ВМ](#проверка-плана-без-создания-вм)
 6. [Один GitHub-репозиторий и его секреты](#один-github-репозиторий-и-его-секреты)
 7. [Первый push и сборка приложения](#первый-push-и-сборка-приложения)
 8. [Установка Kubernetes](#установка-kubernetes)
@@ -65,17 +78,31 @@
 11. [Работа обоих workflow](#работа-обоих-workflow)
 12. [Локальная проверка приложения и конфигураций](#локальная-проверка-приложения-и-конфигураций)
 13. [Повторное создание и удаление](#повторное-создание-и-удаление)
-14. [Что предоставить для сдачи](#что-предоставить-для-сдачи)
+14. [Отчет для сдачи](#отчет-для-сдачи)
+15. [Скриншоты для сдачи](#скриншоты-для-сдачи)
 
 ## Что разворачивается
 
-Terraform создаёт VPC, подсети в трёх зонах доступности, security group, публичные IP и три ВМ Ubuntu 22.04. Ansible устанавливает K3s `v1.36.5+k3s1` (Kubernetes 1.36.5): один управляющий узел и два рабочих. Встроенный Traefik принимает HTTP на порту 80.  
+Terraform создаёт одну VPC, три подсети в двух зонах доступности (`ru-central1-a` и `ru-central1-d`), одну security group, три статических публичных IPv4-адреса и три ВМ Ubuntu 22.04. Ansible устанавливает K3s `v1.36.5+k3s1` (Kubernetes 1.36.5): один управляющий узел и два рабочих. Встроенный Traefik принимает HTTP на порту 80.
 
-| Узел | Зона | vCPU / гарантированная доля | RAM | SSD | Прерываемый |
-|---|---|---|---|---|---|
-| control-plane | ru-central1-a | 2 / 20% | 4 ГБ | 32 ГБ | нет |
-| worker-1 | ru-central1-b | 2 / 20% | 2 ГБ | 20 ГБ | да |
-| worker-2 | ru-central1-d | 2 / 20% | 2 ГБ | 20 ГБ | да |
+| Узел | Зона | Подсеть / внутренний IP | vCPU / гарантированная доля | RAM | SSD | Прерываемый |
+|---|---|---|---|---|---|---|
+| control-plane | ru-central1-a | `a`: `10.10.10.0/24` / `10.10.10.10` | 2 / 20% | 4 ГиБ | 32 ГиБ | нет |
+| worker-1 | ru-central1-d | `d1`: `10.10.20.0/24` / `10.10.20.10` | 2 / 20% | 2 ГиБ | 20 ГиБ | да |
+| worker-2 | ru-central1-d | `d2`: `10.10.30.0/24` / `10.10.30.10` | 2 / 20% | 2 ГиБ | 20 ГиБ | да |
+
+`d1` и `d2` — ключи двух разных подсетей в одной зоне `ru-central1-d`. Все ВМ используют платформу `standard-v3`; каждой ВМ выделяется отдельный статический публичный IP.
+
+Потребность по зонам и квоты, подтверждённые для этого облака:
+
+| Зона | vCPU: нужно / квота | RAM: нужно / квота | SSD: нужно / квота |
+|---|---|---|---|
+| ru-central1-a | 2 / 2 | 4 / 16 ГиБ | 32 / 32 ГиБ |
+| ru-central1-d | 4 / 4 | 4 / 16 ГиБ | 40 / 40 ГиБ |
+
+Всего: 6 vCPU, 8 ГиБ RAM и 72 ГиБ SSD. Гарантированная доля CPU 20% не уменьшает число vCPU, учитываемых квотой. Нужны квоты на три статических публичных IP, три ВМ, три диска, одну дополнительную сеть, три подсети и одну security group. В данной конфигурации нет запаса по квотам vCPU и SSD: перед созданием проверьте, что их не заняли другие ресурсы. Успешный plan подтверждает конфигурацию, но не резервирует физическую ёмкость зоны.
+
+Для выбранного варианта с самостоятельной установкой Kubernetes через Ansible используются три ВМ и подсети в разных зонах `a` и `d`.
 
 В Kubernetes устанавливаются:
 
@@ -119,13 +146,13 @@ Terraform создаёт VPC, подсети в трёх зонах доступ
 | [.gitignore](.gitignore) | исключения для state, ключей, локальных настроек и временных файлов |
 | [requirements.txt](requirements.txt) | зависимости Ansible и локальных проверок |
 
-Каталоги `.secrets/`, `.generated/`, `.venv/`, файлы state и `.env` создаются локально при запуске и исключены из Git. В архиве реальных ключей и токенов нет.
+Каталоги `.secrets/`, `.generated/`, `.venv/`, файлы state и `.env` создаются локально при запуске и исключены из Git. Bootstrap state содержит созданные ключи. При передаче исходников отдельно исключайте `.env`, `.secrets/`, `.generated/`, `.terraform/` и state-файлы: архиватор не применяет `.gitignore` автоматически.
 
 ## Инструменты
 
 Рабочий компьютер — Linux/bash; под Windows можно использовать WSL Ubuntu. Три ВМ Kubernetes создаются Terraform в Yandex Cloud на этапе развёртывания.
 
-Нужны Python 3.10+, Git, curl, unzip, OpenSSL, Yandex CLI, Terraform 1.11.4, kubectl 1.36 и Helm 3. Для локального теста приложения нужен Docker; GitHub
+Нужны Python 3.10+, Git, curl, unzip, OpenSSL, Yandex CLI, Terraform 1.12.2, kubectl 1.36 и Helm 3 или 4. В обоих jobs Terraform workflow также закреплена версия 1.12.2; установленный локально Terraform 1.12.2 переустанавливать не нужно. Для локального теста приложения нужен Docker; GitHub
 runner собирает и тестирует образ своим Docker.
 
 Базовые пакеты Ubuntu 22.04/24.04:
@@ -135,16 +162,19 @@ sudo apt-get update
 sudo apt-get install -y git curl unzip openssl python3-venv
 ```
 
-Установка Terraform для Linux x86_64:
+Установка Terraform для Linux x86_64, если он ещё не установлен:
 
 ```bash
-mkdir -p /tmp/diplom-terraform
-cd /tmp/diplom-terraform
-curl -fSLO https://releases.hashicorp.com/terraform/1.11.4/terraform_1.11.4_linux_amd64.zip
-curl -fSLO https://releases.hashicorp.com/terraform/1.11.4/terraform_1.11.4_SHA256SUMS
-grep '  terraform_1.11.4_linux_amd64.zip$' terraform_1.11.4_SHA256SUMS | sha256sum -c -
-unzip terraform_1.11.4_linux_amd64.zip
-sudo install -m 0755 terraform /usr/local/bin/terraform
+(
+  set -e
+  mkdir -p /tmp/diplom-terraform
+  cd /tmp/diplom-terraform
+  curl -fSLO https://releases.hashicorp.com/terraform/1.12.2/terraform_1.12.2_linux_amd64.zip
+  curl -fSLO https://releases.hashicorp.com/terraform/1.12.2/terraform_1.12.2_SHA256SUMS
+  grep '  terraform_1.12.2_linux_amd64.zip$' terraform_1.12.2_SHA256SUMS | sha256sum -c -
+  unzip terraform_1.12.2_linux_amd64.zip
+  sudo install -m 0755 terraform /usr/local/bin/terraform
+)
 ```
 
 Установка kubectl для Linux x86_64:
@@ -156,9 +186,8 @@ echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -
 sudo install -m 0755 kubectl /usr/local/bin/kubectl
 ```
 
-Helm 3: [официальная инструкция установки](https://helm.sh/docs/intro/install/).
+Helm: [официальная инструкция установки](https://helm.sh/docs/intro/install/).
 Yandex CLI: [инструкция Yandex Cloud](https://yandex.cloud/ru/docs/cli/operations/install-cli).
-
 
 ```bash
 python3 -m venv .venv
@@ -178,18 +207,18 @@ helm version
 | Cloud ID | `b1ghf5g8o4mhdlrvofo5` |
 | Каталог | `netology-userg` |
 | Folder ID | `b1gcaq8clab0al7c1qhs` |
-| Профиль CLI |  `yc` |
-
+| Профиль CLI | `default` |
 
 ```bash
 yc config profile list
-yc --profile yc config list
+yc --profile default config get cloud-id
+yc --profile default config get folder-id
 ```
 
-Скрипты передают `--profile` явно, не переключая активный профиль пользователя.
+Bootstrap использует `YC_PROFILE=default` из `.env` и передаёт `--profile` явно, не переключая активный профиль пользователя. Основной Terraform и GitHub Actions используют ключ созданного сервисного аккаунта, а не пользовательский профиль CLI. Облако и каталог основного стека задаются в `config.auto.tfvars.json` и секрете `TFVARS_JSON`.
 
 ```bash
-cp .env.example .env
+test -f .env || cp .env.example .env
 nano .env
 ```
 
@@ -197,13 +226,12 @@ nano .env
 
 | Поле | Что указать |
 |---|---|
-| `YC_PROFILE` | `default` либо `yc` |
+| `YC_PROFILE` | `default` — подтверждённый профиль для этой работы |
 | `ADMIN_CIDR` | внешний IPv4 вашего рабочего компьютера с маской `/32` |
 | `SSH_PUBLIC_KEY_PATH` | путь к открытому SSH-ключу, например `$HOME/.ssh/id_ed25519.pub` |
 | `SSH_PRIVATE_KEY_PATH` | путь к соответствующему закрытому SSH-ключу |
 | `IMAGE_NAME` | `<dockerhub_login>/devops-diplom-app`, строчными буквами |
 | `IMAGE_TAG` | `main` для первоначального запуска |
-
 
 ## Создание сервисных аккаунтов и S3 backend
 
@@ -213,7 +241,7 @@ nano .env
 bash scripts/bootstrap.sh
 ```
 
-Пользователю выбранного профиля нужны права создания сервисных аккаунтов, их ключей, назначения IAM-ролей и управления Object Storage, включая ACL.  
+Пользователю выбранного профиля нужны права создания сервисных аккаунтов, их ключей, назначения IAM-ролей и управления Object Storage, включая ACL.
 Скрипт проверяет cloud/folder, создаёт ресурсы bootstrap и инициализирует S3 backend основного стека.
 
 | Созданный объект | Назначение и права |
@@ -234,13 +262,37 @@ bash scripts/bootstrap.sh
 
 Bootstrap state находится в `terraform/bootstrap/terraform.tfstate` и содержит созданные ключи.  Основной state находится в S3. Эти локальные файлы исключены из Git.
 
+### Проверка плана без создания ВМ
+
+После успешного bootstrap и изменения размещения на `a/d/d` повторно запускать `bootstrap.sh` не требуется. Размеры дисков уже заданы в `instances.tf`, а зоны — в `network.tf` и привязках узлов. Если изменились только эти исходники, `.env`, ключи и `TFVARS_JSON` обновлять не нужно.
+
+До создания ВМ оставляйте repository variables `TF_APPLY_ENABLED=false` и `K8S_DEPLOY_ENABLED=false`. Из корня проекта с существующими `.env` и `.secrets/`:
+
+```bash
+source .venv/bin/activate
+bash <<'CHECK_PLAN'
+set -euo pipefail
+source scripts/common.sh
+load_credentials
+cluster_init
+terraform -chdir=terraform/cluster fmt -check
+terraform -chdir=terraform/cluster validate
+terraform -chdir=terraform/cluster plan -input=false
+CHECK_PLAN
+```
+
+Этот блок выполняет init, validate и plan, без apply. `cluster.sh` на этом этапе не запускайте: он выполняет apply автоматически.
+
+В предоставленном логе от 27.10.2026 backend S3 инициализирован, `validate` завершился сообщением `Success! The configuration is valid.`, план содержит `11 to add, 0 to change, 0 to destroy`: три ВМ, три статических IP, три подсети, одну VPC и одну security group. Загрузочные диски 32/20/20 ГиБ входят в ресурсы ВМ. Создание ресурсов и готовность Kubernetes этим логом ещё не подтверждены.
+
+Предупреждение `Cannot connect to YC tool initialization service` относится к сервису проверки версий: в этом запуске чтение образа Ubuntu и построение плана завершились успешно. Сообщение об отсутствии `-out` означает, что показанный plan не сохранён для последующего apply. Terraform workflow сохраняет план через `-out=cluster.tfplan` и применяет этот файл.
+
 ## Один GitHub-репозиторий и его секреты
 
 Общий GitHub-репозиторий: <https://github.com/SKISHCHENKO/devops-diplom>.
 
-В Docker Hub создано публичное хранилище образов `devops-diplom-app`. Для аккаунта `skishchenko` полное имя образа — `skishchenko/devops-diplom-app`.  
- Публичный доступ позволяет Kubernetes скачивать образ без дополнительного imagePullSecret.  
-
+В Docker Hub создано публичное хранилище образов `devops-diplom-app`. Для аккаунта `skishchenko` полное имя образа — `skishchenko/devops-diplom-app`.
+ Публичный доступ позволяет Kubernetes скачивать образ без дополнительного imagePullSecret.
 
 В **GitHub-репозитории**  → Settings → Secrets and variables → Actions.
 
@@ -274,15 +326,16 @@ Bootstrap state находится в `terraform/bootstrap/terraform.tfstate` и
 2. **Application CI-CD** собирает Docker-образ из `app/`, проверяет nginx и HTTP,
    публикует `<IMAGE_NAME>:main` и `sha-<полный_commit>`.
 
-Сначала пройдут ряд успешных проверок и публикация образа. Пропущенный `apply` в режиме подготовки ожидаем; такой запуск не подтверждает выполнение Terraform CD.
+Сначала должны успешно пройти проверки и публикация образа. Пропущенный `apply` в режиме подготовки ожидаем; такой запуск не подтверждает выполнение Terraform CD.
 Первый коммит main не требует `KUBE_CONFIG_B64`: CD выполняется по тегу только при `K8S_DEPLOY_ENABLED=true`.
 
 ## Установка Kubernetes
 
-Этот этап создаёт ВМ. Необходимо добавить облачные секреты по таблице выше, также задать `TF_APPLY_ENABLED=true` и выполните новый commit/push в main. Дождитесь успешного Terraform pipeline. Изменение только переменной не запускает workflow. Из корня проекта, с активированным Python venv:
+Этот этап создаёт платные облачные ресурсы. Когда будете готовы к развёртыванию, добавьте облачные секреты по таблице выше, задайте `TF_APPLY_ENABLED=true` и выполните новый commit/push в main. Дождитесь завершения успешного Terraform pipeline; локальный apply запускается после него. Изменение только переменной не запускает workflow. Из корня проекта, с активированным Python venv:
 
 ```bash
 bash scripts/cluster.sh
+export KUBECONFIG="$PWD/.generated/admin.kubeconfig"
 kubectl get nodes -o wide
 kubectl get pods --all-namespaces
 ```
@@ -290,7 +343,7 @@ kubectl get pods --all-namespaces
 Скрипт использует тот же S3 state, выполняет Terraform apply, генерирует inventory из актуальных outputs и запускает Ansible. Если предыдущий workflow уже создал ВМ, повторного создания неизменённых ресурсов не требуется.
 
 Ansible подготавливает ОС, устанавливает K3s `v1.36.5+k3s1` и ждёт три узла Ready. Плейбук рассчитан на новую установку или повторный запуск этой minor-ветки;
-существующая установка другой ветки останавливает выполнение до изменения конфигурации. Для её обновления требуется отдельный поэтапный план.     
+существующая установка другой ветки останавливает выполнение до изменения конфигурации. Для её обновления требуется отдельный поэтапный план.
 Kubeconfig записывается в `.generated/admin.kubeconfig` и `~/.kube/config`. Предыдущий `~/.kube/config`, если он существовал, сохраняется рядом как `config.before-diplom-*`.
 
 ## Мониторинг и первоначальный деплой
@@ -300,17 +353,24 @@ Kubeconfig записывается в `.generated/admin.kubeconfig` и `~/.kube
 ```bash
 bash scripts/deploy.sh
 bash scripts/verify.sh
-terraform -chdir=terraform/cluster output app_url
-terraform -chdir=terraform/cluster output grafana_url
+python3 - <<'SHOW_URLS'
+import json
+from pathlib import Path
+outputs = json.loads(Path('.generated/outputs.json').read_text())
+print('Приложение:', outputs['app_url']['value'])
+print('Grafana:', outputs['grafana_url']['value'])
+SHOW_URLS
 ```
 
-`deploy.sh` устанавливает `kube-prometheus-stack`, создаёт секрет Grafana, Ingress и дашборд, затем разворачивает приложение из `IMAGE_NAME:IMAGE_TAG`. `verify.sh` проверяет готовность узлов и компонентов, HTTP приложения/Grafana и наличие метрики трёх Ready-узлов в Prometheus.
+`deploy.sh` устанавливает `kube-prometheus-stack` версии chart `92.10.1`, создаёт секрет Grafana, Ingress и дашборд, затем разворачивает приложение из `IMAGE_NAME:IMAGE_TAG`. `verify.sh` проверяет готовность узлов и компонентов, HTTP приложения/Grafana и наличие метрики трёх Ready-узлов в Prometheus.
 
 Для Grafana логин — `admin`, пароль хранится в `.secrets/grafana-password`:
 
 ```bash
 cat .secrets/grafana-password
 ```
+
+Параметры мониторинга сохраняются при переносе workers в зону `d`: привязка постоянных компонентов идёт по имени `control-plane`, а не по зоне. Работу мониторинга в живом кластере нужно подтвердить после установки: успешный Terraform plan её не проверяет.
 
 В K3s используются SQLite и встроенные компоненты управления. Отдельные scrape jobs для etcd, controller-manager, scheduler и kube-proxy отключены. Включены метрики API, kubelet/cAdvisor, узлов и объектов Kubernetes.
 
@@ -327,7 +387,6 @@ SSH разрешён с `ADMIN_CIDR`. Kubernetes API доступен на 6443 
 После этого можно задать repository variable `K8S_DEPLOY_ENABLED=true`. До её включения теги собираются и публикуются, а job `deploy` пропускается.
 
 Этот аккаунт может обновлять только Deployment `diplom-web` в namespace `app`. Административного доступа к кластеру у CD нет.
-
 
 ```bash
 git tag v1.0.0
@@ -353,7 +412,7 @@ Workflow приложения соберёт и протестирует обр�
 
 Bootstrap и установка Kubernetes выполняются локальными скриптами. Terraform pipeline управляет сетью и ВМ. После замены ВМ повторите `cluster.sh` и `deploy.sh`; для неизменённых ВМ повторная установка не нужна.
 
-В выбранном S3 backend нет распределённой блокировки. Terraform workflow сериализован через `concurrency: terraform-cluster`. Локальные apply/destroy запускайте после завершения активного workflow, чтобы не изменять один state из двух процессов одновременно.
+В выбранном S3 backend нет распределённой блокировки. Только job `apply` сериализован группой `terraform-cluster`: `cancel-in-progress: false` сохраняет работающий apply, а `queue: max` позволяет ожидать нескольким запускам вместо замены единственного ожидающего. Проверки PR и main выполняются независимо от этой очереди и не вытесняют ожидающий apply. Для CD приложения используется отдельная очередь `app-production-deploy` с теми же параметрами. GitHub допускает до 100 ожидающих jobs в такой очереди; порядок ожидания не гарантирует порядок создания коммитов или тегов. Параметры очереди описаны в [официальной документации GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency). Локальные apply/destroy запускайте после завершения активного workflow, чтобы не изменять один state из двух процессов одновременно.
 
 GitHub Actions предоставляет веб-интерфейс CI/CD по HTTPS. Отдельная ВМ Jenkins/TeamCity не используется. Приложение и Grafana обслуживаются по HTTP/80, как требуется для этих двух интерфейсов в задании.
 
@@ -382,14 +441,14 @@ terraform -chdir=terraform/bootstrap validate
 В рабочем каталоге после bootstrap его backend уже настроен. Workflow выполняет проверку на свежем runner.
 
 Скрипты используют общий кэш Terraform providers: `$HOME/.terraform.d/plugin-cache`. Провайдер скачивается, когда подходящего пакета нет в рабочем каталоге/кэше;
-`bootstrap` и основной стек переиспользуют одну копию выбранной версии. Если пакет был установлен в каталогах этого проекта до включения кэша, скрипты сначала перенесут его полную копию в кэш; существующие пакеты кэша не перезаписываются. Проверка контрольных сумм по lock-файлу сохраняется.  
+`bootstrap` и основной стек переиспользуют одну копию выбранной версии. Если пакет был установлен в каталогах этого проекта до включения кэша, скрипты сначала перенесут его полную копию в кэш; существующие пакеты кэша не перезаписываются. Проверка контрольных сумм по lock-файлу сохраняется.
 Путь можно изменить через `TF_PLUGIN_CACHE_DIR` в `.env` или окружении. GitHub Actions тоже сохраняет и восстанавливает кэш по lock-файлам и платформе. Доступ к registry для метаданных может требоваться и при наличии кэша.
 
-Новые `.terraform.lock.hcl` сохранены в обоих Terraform-каталогах и фиксируют версию Yandex provider 0.196.0. Их нужно хранить в Git. Локальные проверки исходников не подтверждают работу облачного backend, публикацию Docker image или готовность живого кластера. Эти результаты проверяются фактическими запусками pipeline и `scripts/verify.sh`.
+Файлы `.terraform.lock.hcl` сохранены в обоих Terraform-каталогах и фиксируют версию Yandex provider 0.196.0. Их нужно хранить в Git. Workflow выполняет `init -lockfile=readonly`: обычный запуск не меняет выбранные зависимости. Перед использованием облачных ключей job `apply` проверяет наличие обязательных параметров и при отсутствии выводит только их имена. Локальные проверки исходников не подтверждают работу облачного backend, публикацию Docker image или готовность живого кластера. Эти результаты проверяются фактическими запусками pipeline и `scripts/verify.sh`.
 
 ## Повторное создание и удаление
 
-Чтобы проверить воспроизводимость основного стека:
+Чтобы проверить воспроизводимость основного стека, временно задайте `TF_APPLY_ENABLED=false` и `K8S_DEPLOY_ENABLED=false`, дождитесь завершения активных workflow и выполните:
 
 ```bash
 bash scripts/destroy.sh
@@ -401,11 +460,9 @@ bash scripts/verify.sh
 `destroy.sh` удаляет ВМ, диски, IP и сеть основного стека. Bootstrap и бакет остаются для следующего apply. При пересоздании управляющего узла старые PVC
 мониторинга удаляются вместе с его диском.
 
-После пересоздания кластера надо заменить `KUBE_CONFIG_B64` в этом же репозитории новым содержимым `.secrets/ci-kubeconfig.b64`.
-
+После пересоздания кластера замените `KUBE_CONFIG_B64` в этом же репозитории новым содержимым `.secrets/ci-kubeconfig.b64`, затем верните `TF_APPLY_ENABLED=true` и `K8S_DEPLOY_ENABLED=true` для демонстрации pipeline. Для окончательного удаления после проверки оставьте обе переменные `false`, дождитесь завершения workflow и запустите только `bash scripts/destroy.sh`. Этот скрипт сохраняет bootstrap и бакет состояния.
 
 ## Отчет для сдачи
-
 
 | Материал | Ссылка / результат |
 |---|---|
@@ -426,3 +483,19 @@ bash scripts/verify.sh
 | Проверка Kubernetes | приложить фактический вывод `kubectl get nodes -o wide` и `kubectl get pods --all-namespaces` |
 | Воспроизводимость инфраструктуры | быть готовым показать destroy/apply основного стека по разделу выше |
 
+## Скриншоты для сдачи
+
+В задании явно запрошены снимки выбранного Terraform CI/CD pipeline как альтернативы Atlantis/Terraform Cloud. Фиксированного количества скриншотов для всей работы не указано. Остальные снимки ниже помогают подтвердить результат; они дополняют исходники и живые URL приложения/Grafana.
+
+| Снимок | Когда и что показать |
+|---|---|
+| Terraform pipeline — общий результат | После включения `TF_APPLY_ENABLED` и push в main: workflow, ветка/коммит, успешные `validate` и `apply`. `apply: skipped` не подтверждает Terraform CD. |
+| Terraform pipeline — init/plan/apply | Раскрытые шаги успешного запуска: подключение S3 backend, план и `Apply complete!`. При первом создании ожидаются 11 новых ресурсов; последующий apply может показать отсутствие изменений. |
+| Kubernetes | После `cluster.sh`: `kubectl get nodes -o wide` с тремя Ready-узлами и `kubectl get pods --all-namespaces` после установки компонентов. |
+| Grafana | После `deploy.sh` и `verify.sh`: дашборд «Диплом — Kubernetes», три Ready-узла, CPU и RAM; в адресной строке HTTP URL `/grafana/`. |
+| Приложение | После деплоя: страница приложения по HTTP/80 с видимым адресом. |
+| Релизный Application pipeline | После push нового тега, например `v1.0.0`: успешные `build` и `deploy`, без skipped. |
+| Docker Hub | Страница Tags образа `skishchenko/devops-diplom-app` с тем же релизным тегом. |
+| Результат обновления | `kubectl -n app rollout status deployment/diplom-web`, образ Deployment с `@sha256:...` и ответ `/version.txt` с релизным тегом. |
+
+Скриншоты можно сохранить в `screenshots/` того же репозитория и добавить ссылки в таблицу отчёта. Пароли Grafana, Docker Hub token, JSON-ключи SA, содержимое state и kubeconfig в кадр не включайте. Пароль Grafana передайте проверяющему отдельно. Приложение и Grafana должны оставаться доступны по предоставленным URL на время проверки; после неё удалите основной стек по разделу выше.

@@ -76,6 +76,7 @@ jobs:
     concurrency:
       group: app-production-deploy
       cancel-in-progress: false
+      queue: max
     steps:
       - name: Установить kubectl
         run: |

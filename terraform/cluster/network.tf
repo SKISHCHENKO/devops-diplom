@@ -1,8 +1,8 @@
 locals {
   subnets = {
-    a = { zone = "ru-central1-a", cidr = "10.10.10.0/24" }
-    b = { zone = "ru-central1-b", cidr = "10.10.20.0/24" }
-    d = { zone = "ru-central1-d", cidr = "10.10.30.0/24" }
+    a  = { zone = "ru-central1-a", cidr = "10.10.10.0/24" }
+    d1 = { zone = "ru-central1-d", cidr = "10.10.20.0/24" }
+    d2 = { zone = "ru-central1-d", cidr = "10.10.30.0/24" }
   }
 }
 resource "yandex_vpc_network" "cluster" {
