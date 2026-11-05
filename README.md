@@ -14,12 +14,14 @@
 ### Создание облачной инфраструктуры
 
 Ожидаемые результаты:
+
 - Terraform сконфигурирован и создание инфраструктуры посредством Terraform возможно без дополнительных ручных действий, стейт основной конфигурации сохраняется в бакете или Terraform Cloud
 - Полученная конфигурация инфраструктуры является предварительной, поэтому в ходе дальнейшего выполнения задания возможны изменения.
 
 ### Создание Kubernetes кластера
 
 Ожидаемый результат:
+
 - Работоспособный Kubernetes кластер.
 - В файле ~/.kube/config находятся данные для доступа к кластеру.
 - Команда kubectl get pods --all-namespaces отрабатывает без ошибок.
@@ -27,12 +29,14 @@
 ### Создание тестового приложения
 
 Ожидаемый результат:
+
 - Git репозиторий с тестовым приложением и Dockerfile.
 - Регистр с собранным docker image. В качестве регистри может быть DockerHub или Yandex Container Registry, созданный также с помощью terraform.
 
 ### Подготовка cистемы мониторинга и деплой приложения
 
 Ожидаемый результат:
+
 - Git репозиторий с конфигурационными файлами для настройки Kubernetes.
 - Http доступ на 80 порту к web интерфейсу grafana.
 - Дашборды в grafana отображающие состояние Kubernetes кластера.
@@ -42,6 +46,7 @@
 ### Установка и настройка CI/CD
 
 Ожидаемый результат:
+
 - Интерфейс ci/cd сервиса доступен по http.
 - При любом коммите в репозиторие с тестовым приложением происходит сборка и отправка в регистр Docker образа.
 - При создании тега (например, v1.0.0) происходит сборка и отправка с соответствующим label в регистри, а также деплой соответствующего Docker образа в кластер Kubernetes.
@@ -61,6 +66,8 @@
 Один GitHub-репозиторий со всей работой: Terraform, Ansible, Kubernetes,
 мониторинг, nginx-приложение и оба GitHub Actions workflow. Все команды ниже
 выполняются из корня этого репозитория, если явно не указан другой каталог.
+
+**Состояние на 05.11.2026.** Проверен публичный репозиторий и его актуальный коммит main [`aab6651`](https://github.com/SKISHCHENKO/devops-diplom/commit/aab6651f722cf4bcc0f8adb2388d601e03495a54) от 27.10.2026. Terraform CI и CI приложения для этого коммита завершились успешно. В этих запусках jobs `apply` и `deploy` пропущены; для тега `v0.0.1-ci` подтверждены сборка и публикация, а `deploy` тоже пропущен. Живой Kubernetes, мониторинг и CD требуют отдельного подтверждения после развёртывания. Прямые ссылки и опубликованные digest приведены в [отчёте для сдачи](#отчет-для-сдачи).
 
 ## Содержание
 
@@ -93,14 +100,12 @@ Terraform создаёт одну VPC, три подсети в двух зон�
 
 `d1` и `d2` — ключи двух разных подсетей в одной зоне `ru-central1-d`. Все ВМ используют платформу `standard-v3`; каждой ВМ выделяется отдельный статический публичный IP.
 
-Потребность по зонам и квоты, подтверждённые для этого облака:
+Потребность по зонам и квоты, подтверждённые предоставленным выводом Yandex CLI и согласованиями от 27.10.2026:
 
 | Зона | vCPU: нужно / квота | RAM: нужно / квота | SSD: нужно / квота |
 |---|---|---|---|
 | ru-central1-a | 2 / 2 | 4 / 16 ГиБ | 32 / 32 ГиБ |
 | ru-central1-d | 4 / 4 | 4 / 16 ГиБ | 40 / 40 ГиБ |
-
-Всего: 6 vCPU, 8 ГиБ RAM и 72 ГиБ SSD. Гарантированная доля CPU 20% не уменьшает число vCPU, учитываемых квотой. Нужны квоты на три статических публичных IP, три ВМ, три диска, одну дополнительную сеть, три подсети и одну security group. В данной конфигурации нет запаса по квотам vCPU и SSD: перед созданием проверьте, что их не заняли другие ресурсы. Успешный plan подтверждает конфигурацию, но не резервирует физическую ёмкость зоны.
 
 Для выбранного варианта с самостоятельной установкой Kubernetes через Ansible используются три ВМ и подсети в разных зонах `a` и `d`.
 
@@ -121,7 +126,7 @@ Terraform создаёт одну VPC, три подсети в двух зон�
 | Grafana | `http://<IP_control-plane>/grafana/` |
 | CI/CD | вкладка Actions общего GitHub-репозитория |
 
-И приложение, и Grafana доступны по HTTP на **80 порту**. Образ приложения хранится в Docker Hub. Это реестр Docker-образов, а не второй Git-репозиторий с исходниками.
+После развёртывания приложение и Grafana должны быть доступны по HTTP на **80 порту**. Фактические публичные URL в отчёте заполняются после проверки этих интерфейсов. Образ приложения хранится в Docker Hub. Это реестр Docker-образов, а не второй Git-репозиторий с исходниками.
 
 ## Структура репозитория
 
@@ -162,7 +167,7 @@ sudo apt-get update
 sudo apt-get install -y git curl unzip openssl python3-venv
 ```
 
-Установка Terraform для Linux x86_64, если он ещё не установлен:
+Установка Terraform для Linux x86_64:
 
 ```bash
 (
@@ -222,15 +227,12 @@ test -f .env || cp .env.example .env
 nano .env
 ```
 
-Заполните следующие поля:
-
 | Поле | Что указать |
 |---|---|
 | `YC_PROFILE` | `default` — подтверждённый профиль для этой работы |
-| `ADMIN_CIDR` | внешний IPv4 вашего рабочего компьютера с маской `/32` |
-| `SSH_PUBLIC_KEY_PATH` | путь к открытому SSH-ключу, например `$HOME/.ssh/id_ed25519.pub` |
-| `SSH_PRIVATE_KEY_PATH` | путь к соответствующему закрытому SSH-ключу |
-| `IMAGE_NAME` | `<dockerhub_login>/devops-diplom-app`, строчными буквами |
+| `ADMIN_CIDR` | внешний IPv4 рабочего компьютера с маской `/32` |
+| `SSH_PUBLIC_KEY_PATH` | `$HOME/.ssh/id_ed25519.pub` |
+| `IMAGE_NAME` | `<skishchenko>/devops-diplom-app`, строчными буквами |
 | `IMAGE_TAG` | `main` для первоначального запуска |
 
 ## Создание сервисных аккаунтов и S3 backend
@@ -264,10 +266,6 @@ Bootstrap state находится в `terraform/bootstrap/terraform.tfstate` и
 
 ### Проверка плана без создания ВМ
 
-После успешного bootstrap и изменения размещения на `a/d/d` повторно запускать `bootstrap.sh` не требуется. Размеры дисков уже заданы в `instances.tf`, а зоны — в `network.tf` и привязках узлов. Если изменились только эти исходники, `.env`, ключи и `TFVARS_JSON` обновлять не нужно.
-
-До создания ВМ оставляйте repository variables `TF_APPLY_ENABLED=false` и `K8S_DEPLOY_ENABLED=false`. Из корня проекта с существующими `.env` и `.secrets/`:
-
 ```bash
 source .venv/bin/activate
 bash <<'CHECK_PLAN'
@@ -281,11 +279,9 @@ terraform -chdir=terraform/cluster plan -input=false
 CHECK_PLAN
 ```
 
-Этот блок выполняет init, validate и plan, без apply. `cluster.sh` на этом этапе не запускайте: он выполняет apply автоматически.
+Этот блок выполняет init, validate и plan, без apply.
 
 В предоставленном логе от 27.10.2026 backend S3 инициализирован, `validate` завершился сообщением `Success! The configuration is valid.`, план содержит `11 to add, 0 to change, 0 to destroy`: три ВМ, три статических IP, три подсети, одну VPC и одну security group. Загрузочные диски 32/20/20 ГиБ входят в ресурсы ВМ. Создание ресурсов и готовность Kubernetes этим логом ещё не подтверждены.
-
-Предупреждение `Cannot connect to YC tool initialization service` относится к сервису проверки версий: в этом запуске чтение образа Ubuntu и построение плана завершились успешно. Сообщение об отсутствии `-out` означает, что показанный plan не сохранён для последующего apply. Terraform workflow сохраняет план через `-out=cluster.tfplan` и применяет этот файл.
 
 ## Один GitHub-репозиторий и его секреты
 
@@ -310,8 +306,6 @@ CHECK_PLAN
 | Secret | `TFVARS_JSON` | весь JSON `terraform/cluster/config.auto.tfvars.json` | до включения `TF_APPLY_ENABLED` |
 | Secret | `KUBE_CONFIG_B64` | содержимое `.secrets/ci-kubeconfig.b64` | после установки приложения, до включения CD |
 
-Переменные добавляются во вкладке Variables, секреты — во вкладке Secrets. Имя секрета логина должно быть именно `DOCKERHUB_USERNAME`: workflow читает `secrets.DOCKERHUB_USERNAME`. Секрет с именем `DOCKERHUB_NAME` его не заменяет.
-
 `TFVARS_JSON` содержит публичный SSH-ключ и параметры ВМ. Закрытый SSH-ключ и административный kubeconfig в GitHub не загружаются. Bootstrap не запускается из workflow: основной Terraform использует подготовленные SA и бакет.
 
 На этапе подготовки без ВМ достаточно `IMAGE_NAME`, двух переменных со значением `false` и секретов `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN`. `TF_STATE_BUCKET` и облачные секреты добавляются до включения `TF_APPLY_ENABLED`. `KUBE_CONFIG_B64` добавляется после первоначального деплоя, до включения CD.
@@ -330,8 +324,6 @@ CHECK_PLAN
 Первый коммит main не требует `KUBE_CONFIG_B64`: CD выполняется по тегу только при `K8S_DEPLOY_ENABLED=true`.
 
 ## Установка Kubernetes
-
-Этот этап создаёт платные облачные ресурсы. Когда будете готовы к развёртыванию, добавьте облачные секреты по таблице выше, задайте `TF_APPLY_ENABLED=true` и выполните новый commit/push в main. Дождитесь завершения успешного Terraform pipeline; локальный apply запускается после него. Изменение только переменной не запускает workflow. Из корня проекта, с активированным Python venv:
 
 ```bash
 bash scripts/cluster.sh
@@ -464,30 +456,60 @@ bash scripts/verify.sh
 
 ## Отчет для сдачи
 
+Проверка публичных результатов выполнена 05.11.2026. Последние запуски main относятся к коммиту [`aab6651`](https://github.com/SKISHCHENKO/devops-diplom/commit/aab6651f722cf4bcc0f8adb2388d601e03495a54) от 27.10.2026. Прямые ссылки ниже ведут на конкретные запуски, а не только на общую вкладку Actions.
+
 | Материал | Ссылка / результат |
 |---|---|
 | Общий GitHub-репозиторий | <https://github.com/SKISHCHENKO/devops-diplom> |
+| Проверенная версия исходников | [`aab6651` — Update deployment configuration and documentation](https://github.com/SKISHCHENKO/devops-diplom/commit/aab6651f722cf4bcc0f8adb2388d601e03495a54), main, 27.10.2026 |
 | Terraform | [terraform/](terraform/), отдельно [bootstrap/](terraform/bootstrap/) и [cluster/](terraform/cluster/) |
-| Ansible и K3s | [ansible/](ansible/) |
-| Kubernetes и мониторинг | [kubernetes/](kubernetes/) |
+| Ansible и K3s | [ansible/](ansible/); в конфигурации K3s `v1.36.5+k3s1` |
+| Kubernetes и мониторинг | [kubernetes/](kubernetes/); chart `kube-prometheus-stack` `92.10.1` |
 | Dockerfile приложения | [app/Dockerfile](app/Dockerfile) |
 | Docker Hub repository | <https://hub.docker.com/r/skishchenko/devops-diplom-app> |
-| Опубликованный релизный image и тег | заполнить после публикации |
-| Terraform pipeline от коммита main с init/plan/apply | заполнить ссылку на успешный запуск |
-| CI приложения: build/test/push | заполнить ссылку на успешный запуск |
-| CD нового релизного тега | заполнить ссылку на успешный rollout |
-| Приложение HTTP/80 | заполнить после развёртывания |
-| Grafana HTTP/80 | заполнить после развёртывания |
-| Логин Grafana | `admin` |
-| Пароль Grafana | передать проверяющему отдельно из `.secrets/grafana-password` |
-| Проверка Kubernetes | приложить фактический вывод `kubectl get nodes -o wide` и `kubectl get pods --all-namespaces` |
-| Воспроизводимость инфраструктуры | быть готовым показать destroy/apply основного стека по разделу выше |
+| CI-образ из main | `docker.io/skishchenko/devops-diplom-app:main`, опубликован 27.10.2026; [теги Docker Hub](https://hub.docker.com/r/skishchenko/devops-diplom-app/tags) |
+| Образ тестового тега | `docker.io/skishchenko/devops-diplom-app:v0.0.1-ci`, опубликован 24.10.2026; сборка и публикация подтверждены, CD пропущен |
+| Опубликованный релизный image и тег с CD | Требуется новый релизный тег и успешный job `deploy`; тестовый `v0.0.1-ci` этот результат пока не подтверждает |
+| Terraform CI: проверки исходников | [Запуск от push в main](https://github.com/SKISHCHENKO/devops-diplom/actions/runs/40504623352): `validate` — success; Terraform fmt/validate и проверка YAML, HCL, shell, Ansible успешны |
+| Terraform pipeline от коммита main с init/plan/apply | В [проверенном запуске](https://github.com/SKISHCHENKO/devops-diplom/actions/runs/40504623352) job `apply` — skipped. Для сдачи нужна ссылка и скриншоты запуска с выполненными облачными init/plan/apply |
+| CI приложения: build/test/push | [Успешный запуск main](https://github.com/SKISHCHENKO/devops-diplom/actions/runs/40504623448): сборка, nginx/HTTP-тест и публикация — success; `deploy` — skipped |
+| CI приложения по тестовому тегу | [Запуск v0.0.1-ci](https://github.com/SKISHCHENKO/devops-diplom/actions/runs/40111437371): `build` — success; `deploy` — skipped |
+| Локальная проверка Docker-образа | По предоставленному выводу `app/scripts/test.sh` для `v0.0.1-ci`: nginx-конфигурация, healthz, HTML, версия и HTTP 404 — OK |
+| Bootstrap и удалённый backend | По предоставленным логам bootstrap выполнен; бакет `devops-diplom-state-b1gcaq8clab0al7c1qhs`, backend основного стека S3 инициализирован. Это результат локального запуска, а не job `apply` в GitHub |
+| Локальный план основного стека | По предоставленному логу от 27.10.2026: `validate` успешен; `11 to add, 0 to change, 0 to destroy`, ВМ `a/d/d`, SSD 32/20/20 ГиБ, три статических IP |
+| CD нового релизного тега | Ожидается успешный `deploy`, rollout и проверка `/version.txt` с новым релизным тегом |
+| Приложение HTTP/80 | Фактический URL и HTTP-ответ пока не предоставлены; добавить после `deploy.sh` и `verify.sh` |
+| Grafana HTTP/80 | Фактический URL `/grafana/` и работа дашборда пока не подтверждены; добавить после развёртывания |
+| Логин Grafana | В конфигурации задан `admin`; вход проверить после установки |
+| Пароль Grafana | Генерируется при первом `deploy.sh`, сохраняется в `.secrets/grafana-password`; передать проверяющему отдельно |
+| Проверка Kubernetes | Ожидается фактический вывод `kubectl get nodes -o wide`, `kubectl get pods --all-namespaces` и успешный `scripts/verify.sh` |
+| Воспроизводимость инфраструктуры | Конфигурация и порядок повторного создания подготовлены; фактический destroy/apply основного стека пока не подтверждён |
+| Скриншоты | В проверенном дереве репозитория снимки ещё не добавлены; подготовить по таблице ниже |
+
+### Опубликованные образы
+
+Digest получены из Docker Hub при проверке 05.11.2026. Тег `main` может обновляться при следующих push; digest фиксирует проверенную публикацию.
+
+| Тег | Digest | Коммит сборки |
+|---|---|---|
+| `main` | `sha256:b95d39a627bda0c2e0d7ed9f6f49ee873382899c48d30508a007229dd4343e60` | [`aab6651`](https://github.com/SKISHCHENKO/devops-diplom/commit/aab6651f722cf4bcc0f8adb2388d601e03495a54) |
+| `v0.0.1-ci` | `sha256:67f9e26d60a77796552406e211dd599f190b424ca6940b08fc6814245735fc1c` | [`ec285d9`](https://github.com/SKISHCHENKO/devops-diplom/commit/ec285d98f817bb3573205e83b1e77d278f20de78) |
+
+У опубликованного образа `v0.0.1-ci` дополнительно проверены платформа `linux/amd64` и OCI-метаданные:
+
+- `org.opencontainers.image.version=v0.0.1-ci`;
+- `org.opencontainers.image.revision=ec285d98f817bb3573205e83b1e77d278f20de78`;
+- `org.opencontainers.image.source=https://github.com/SKISHCHENKO/devops-diplom`.
+
+Тестовый тег относится к коммиту `ec285d9` от 24.10.2026, а опубликованный `main` — к более новому `aab6651` от 27.10.2026. Наличие образа и version label подтверждает сборку и публикацию; автоматическое обновление Kubernetes подтверждается отдельным успешным job `deploy`.
+
+Значения repository variables, наличие облачных секретов GitHub, текущее состояние ВМ в Yandex Cloud и результаты локального Ansible не проверяются через публичный список запусков. Их готовность нужно подтвердить перед платным развёртыванием. Bootstrap и локальный plan в таблице отмечены на основании ранее предоставленных логов.
 
 ## Скриншоты для сдачи
 
 В задании явно запрошены снимки выбранного Terraform CI/CD pipeline как альтернативы Atlantis/Terraform Cloud. Фиксированного количества скриншотов для всей работы не указано. Остальные снимки ниже помогают подтвердить результат; они дополняют исходники и живые URL приложения/Grafana.
 
-| Снимок | Когда и что показать |
+| Снимок | Действие |
 |---|---|
 | Terraform pipeline — общий результат | После включения `TF_APPLY_ENABLED` и push в main: workflow, ветка/коммит, успешные `validate` и `apply`. `apply: skipped` не подтверждает Terraform CD. |
 | Terraform pipeline — init/plan/apply | Раскрытые шаги успешного запуска: подключение S3 backend, план и `Apply complete!`. При первом создании ожидаются 11 новых ресурсов; последующий apply может показать отсутствие изменений. |
@@ -498,4 +520,3 @@ bash scripts/verify.sh
 | Docker Hub | Страница Tags образа `skishchenko/devops-diplom-app` с тем же релизным тегом. |
 | Результат обновления | `kubectl -n app rollout status deployment/diplom-web`, образ Deployment с `@sha256:...` и ответ `/version.txt` с релизным тегом. |
 
-Скриншоты можно сохранить в `screenshots/` того же репозитория и добавить ссылки в таблицу отчёта. Пароли Grafana, Docker Hub token, JSON-ключи SA, содержимое state и kubeconfig в кадр не включайте. Пароль Grafana передайте проверяющему отдельно. Приложение и Grafana должны оставаться доступны по предоставленным URL на время проверки; после неё удалите основной стек по разделу выше.
